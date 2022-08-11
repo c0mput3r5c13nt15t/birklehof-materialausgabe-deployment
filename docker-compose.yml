@@ -1,0 +1,81 @@
+version: '3'
+
+services:
+  traefik:
+    container_name: bmd-traefik-container
+    restart: always
+    image: "traefik:v2.7"
+    command:
+      - "--log.level=DEBUG"
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.nextjs.address=:80"
+      - "--entrypoints.nextjs.http.redirections.entrypoint.to=nextjs-secure"
+      - "--entrypoints.nextjs.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.nextjs-secure.address=:443"
+      - "--entrypoints.database.address=:5432"
+    networks:
+      - network
+    ports:
+      - "80:80"
+      - "443:443"
+      - "5432:5432"
+      # (Optional) Expose Dashboard
+      # - "8080:8080"  # Don't do this in production!
+    volumes:
+      - "traefik:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+  database:
+    container_name: bmd-database-container
+    restart: always
+    image: postgres
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tcp.routers.database.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.database.entrypoints=database"
+    environment:
+      POSTGRES_PASSWORD: password
+    networks:
+      - network
+    volumes:
+      - ./database-data:/var/lib/postgresql/data
+  migrate-database:
+    container_name: bmd-migrate-database-container
+    build:
+      context: ./nextjs
+      dockerfile: migrate-database.Dockerfile
+    labels:
+      - "traefik.enable=true"
+    networks:
+      - network
+    depends_on:
+      - database
+  nextjs:
+    container_name: bmd-nextjs-container
+    restart: always
+    build:
+      context: ./nextjs
+      dockerfile: Dockerfile
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.nextjs.loadbalancer.server.port=3000"
+      - "traefik.http.routers.nextjs.entrypoints=nextjs-secure"
+      - "traefik.http.routers.nextjs.tls=true"
+      - "traefik.http.routers.nextjs.rule=Host(`${DOMAIN}`)"
+    networks:
+      - network
+    depends_on:
+      - migrate-database
+    extra_hosts:
+      - "www.birklehof-materialausgabe.de:0.0.0.0" # Remove -> Either rent domain or make entry in local network -> Edit OAuth settings
+
+networks:
+  network:
+    name: bmd-network
+
+volumes:
+  database-data:
+    name: bmd-database-data
+  traefik:
+    name: bmd-traefik
