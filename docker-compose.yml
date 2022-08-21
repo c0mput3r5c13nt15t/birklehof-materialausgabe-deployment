@@ -6,7 +6,7 @@ services:
     restart: always
     image: "traefik:v2.7"
     command:
-      - "--log.level=DEBUG"
+      - "--log.level=ERROR"
       - "--api.insecure=false"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
